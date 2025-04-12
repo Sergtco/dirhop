@@ -3,13 +3,12 @@ use std::{
     env,
     fs::{self, DirEntry},
     io::{self, Write},
-    process::exit,
 };
 
 use crossterm::{
     ExecutableCommand, cursor,
     event::{Event, KeyModifiers},
-    queue,
+    execute,
     style::Stylize,
     terminal,
 };
@@ -39,36 +38,33 @@ impl Iterator for Labeler {
     }
 }
 
-fn quit() {
-    queue!(
-        io::stdout(),
-        cursor::RestorePosition,
-        terminal::Clear(terminal::ClearType::FromCursorDown)
-    )
-    .unwrap();
-    io::stdout().flush().unwrap();
-
-    terminal::disable_raw_mode().unwrap();
-    exit(0)
-}
-
-fn clear() -> io::Result<()> {
-    queue!(
-        io::stdout(),
+fn restore() -> io::Result<()> {
+    execute!(
+        io::stderr(),
         cursor::RestorePosition,
         terminal::Clear(terminal::ClearType::FromCursorDown)
     )?;
-    io::stdout().flush()?;
+
+    terminal::disable_raw_mode()
+}
+
+fn clear() -> io::Result<()> {
+    execute!(
+        io::stderr(),
+        cursor::RestorePosition,
+        terminal::Clear(terminal::ClearType::FromCursorDown)
+    )?;
     Ok(())
 }
 
 fn draw_list(ans: &str, binds: &BTreeMap<String, DirEntry>) -> io::Result<()> {
-    io::stdout().execute(cursor::SavePosition)?;
+    let mut stderr = io::stderr();
+    stderr.execute(cursor::SavePosition)?;
 
     for (label, entry) in binds.iter() {
         let label = label.strip_prefix(ans).unwrap_or(&label);
         write!(
-            io::stdout(),
+            stderr,
             "[{}{}]{}\r\n",
             ans.blue(),
             label,
@@ -108,7 +104,7 @@ fn main() -> io::Result<()> {
         match crossterm::event::read()? {
             Event::Key(event) => {
                 if event.code.is_char('c') && event.modifiers == KeyModifiers::CONTROL {
-                    quit();
+                    restore()?;
                 }
                 if let Some(key) = event.code.as_char() {
                     if event.modifiers.is_empty() {
