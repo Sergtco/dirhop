@@ -39,11 +39,7 @@ impl Iterator for Labeler {
 }
 
 fn restore() -> io::Result<()> {
-    execute!(
-        io::stderr(),
-        cursor::RestorePosition,
-        terminal::Clear(terminal::ClearType::FromCursorDown)
-    )?;
+    clear()?;
 
     terminal::disable_raw_mode()
 }
@@ -54,6 +50,7 @@ fn clear() -> io::Result<()> {
         cursor::RestorePosition,
         terminal::Clear(terminal::ClearType::FromCursorDown)
     )?;
+
     Ok(())
 }
 
@@ -120,11 +117,12 @@ fn main() -> io::Result<()> {
     }
 
     clear()?;
-    if let Some(entry) = binds.get(&ans) {
-        write!(io::stdout(), "{}", entry.path().to_string_lossy())?;
-    } else {
-        write!(io::stdout(), "Wrong label!")?;
-    }
     terminal::disable_raw_mode()?;
+
+    if let Some(entry) = binds.get(&ans) {
+        println!("{}", entry.path().to_string_lossy());
+    } else {
+        println!("Wrong label!");
+    }
     Ok(())
 }
