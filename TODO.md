@@ -1,3 +1,2 @@
 - [ ] Color entries
-- [ ] Abstract drawing
-- [ ] Riff™ mode???
+- [ ] Abstract tui
