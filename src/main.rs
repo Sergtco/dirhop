@@ -1,9 +1,13 @@
 use std::{
     collections::BTreeMap,
     env,
-    fs::{self, DirEntry},
+    error::Error,
+    fs,
     io::{self},
+    path::PathBuf,
     process::exit,
+    result,
+    str::FromStr,
 };
 
 use crossterm::{
@@ -39,7 +43,7 @@ impl Iterator for Labeler {
         Some(String::from_utf8(vec![first_letter, second_letter]).expect("valid utf8 chars"))
     }
 }
-type Binds = BTreeMap<String, DirEntry>;
+type Binds = BTreeMap<String, PathBuf>;
 
 fn match_binds(ans: &str, binds: Binds) -> Binds {
     binds
@@ -48,18 +52,69 @@ fn match_binds(ans: &str, binds: Binds) -> Binds {
         .collect()
 }
 
-fn main() -> io::Result<()> {
+type Result<T> = result::Result<T, Box<dyn Error>>;
+
+#[derive(Debug, Default)]
+struct Opts {
+    program_name: String,
+    base_path: PathBuf,
+    show_hidden: bool,
+}
+
+impl Opts {
+    pub fn from_args(mut args: impl Iterator<Item = String>) -> Result<Self> {
+        let mut conf = Self::default();
+        conf.program_name = args.next().ok_or("Couldn't get program name")?;
+
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "-h" => conf.show_hidden = true,
+                "--help" => {
+                    usage();
+                    exit(0)
+                }
+                someflag if someflag.starts_with("-") => {
+                    return Err(format!("wrong flag: {someflag}").into());
+                }
+                rest => conf.base_path = PathBuf::from_str(&rest)?,
+            }
+        }
+
+        if conf.base_path.to_string_lossy().len() == 0 {
+            conf.base_path = ".".into();
+        }
+
+        Ok(conf)
+    }
+}
+
+fn usage() {
+    println!("USAGE:");
+    println!("dirhop [PATH] [FLAGS]");
+    println!("");
+    println!("-h show hidden files");
+}
+
+fn main() -> Result<()> {
     if !io::stderr().is_tty() {
         eprintln!("This is not a terminal, Babe!");
         exit(1);
     }
 
-    let mut args = env::args();
-    args.next();
+    let opts = Opts::from_args(env::args()).unwrap_or_else(|err| {
+        eprintln!("Argument error: {err}.");
+        usage();
+        exit(1)
+    });
 
-    let path = args.next().unwrap_or(".".to_string());
+    let entries = fs::read_dir(&opts.base_path)?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|e| {
+            e.file_name()
+                .map(|filename| !filename.to_string_lossy().starts_with(".") || opts.show_hidden)
+                .unwrap_or(false)
+        });
 
-    let entries = fs::read_dir(&path)?.filter_map(|entry| entry.ok());
     let labels = Labeler::new().into_iter();
 
     let mut binds = labels.zip(entries.into_iter()).collect::<Binds>();
@@ -82,6 +137,7 @@ fn main() -> io::Result<()> {
             Event::Key(event) => {
                 if event.code.is_char('c') && event.modifiers == KeyModifiers::CONTROL {
                     renderer.restore()?;
+                    return Ok(());
                 }
                 if let Some(key) = event.code.as_char() {
                     if event.modifiers.is_empty() {
@@ -99,7 +155,7 @@ fn main() -> io::Result<()> {
     renderer.restore()?;
 
     if let Some(entry) = binds.get(&ans) {
-        println!("{}", entry.path().to_string_lossy());
+        println!("{}", entry.to_string_lossy());
     } else {
         println!("Wrong label!");
     }

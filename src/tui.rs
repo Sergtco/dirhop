@@ -1,14 +1,12 @@
-use std::{
-    collections::BTreeMap,
-    fs::DirEntry,
-    io::{self, Write},
-};
+use std::io::{self, Write};
 
 use crossterm::{
     ExecutableCommand, cursor, execute, queue,
     style::{self, Stylize},
     terminal::{self, ClearType},
 };
+
+use crate::Binds;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -34,21 +32,21 @@ impl Renderer {
         })
     }
 
-    pub fn draw_list(&mut self, ans: &str, binds: &BTreeMap<String, DirEntry>) -> io::Result<()> {
+    pub fn draw_list(&mut self, ans: &str, binds: &Binds) -> io::Result<()> {
         self.clear_rect(self.bounds)?;
         self.stderr
             .execute(cursor::MoveTo(self.bounds.x, self.bounds.y))?;
 
         for (label, entry) in binds.iter().take(self.bounds.height as usize) {
             let label = label.strip_prefix(ans).unwrap_or(&label);
+            let entry = match entry.is_dir() {
+                true => entry.to_string_lossy().to_string().bold().dark_blue(),
+                false => entry.to_string_lossy().to_string().stylize(),
+            };
+
             queue!(
                 self.stderr,
-                style::Print(format!(
-                    "[{}{}]{}\r\n",
-                    ans.blue(),
-                    label,
-                    entry.path().to_string_lossy()
-                )),
+                style::Print(format!("[{}{}]{}\r\n", ans.blue(), label, entry)),
             )?;
         }
 

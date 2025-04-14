@@ -1,2 +1,0 @@
-- [ ] Color entries
-- [ ] Abstract tui
