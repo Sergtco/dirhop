@@ -12,7 +12,8 @@ use std::{
 
 use crossterm::{
     cursor,
-    event::{Event, KeyModifiers},
+    event::{Event, KeyEvent, KeyModifiers},
+    terminal,
     tty::IsTty,
 };
 
@@ -121,11 +122,12 @@ fn main() -> Result<()> {
 
     let mut renderer = {
         let (x, y) = cursor::position()?;
+        let (width, height) = terminal::size()?;
         Renderer::with_bounds(Rect {
             x,
             y,
-            width: 10,
-            height: 10,
+            width: width - x - 1,
+            height: height - y - 1,
         })?
     };
 
@@ -134,13 +136,15 @@ fn main() -> Result<()> {
 
     while ans.len() < 2 {
         match crossterm::event::read()? {
-            Event::Key(event) => {
-                if event.code.is_char('c') && event.modifiers == KeyModifiers::CONTROL {
+            Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) => {
+                if code.is_char('c') && modifiers == KeyModifiers::CONTROL {
                     renderer.restore()?;
                     return Ok(());
                 }
-                if let Some(key) = event.code.as_char() {
-                    if event.modifiers.is_empty() {
+                if let Some(key) = code.as_char() {
+                    if modifiers.is_empty() {
                         ans.push(key);
                         binds = match_binds(&ans, binds);
 
