@@ -143,6 +143,7 @@ fn main() -> Result<()> {
                     renderer.restore()?;
                     return Ok(());
                 }
+
                 if let Some(key) = code.as_char() {
                     if modifiers.is_empty() {
                         ans.push(key);
