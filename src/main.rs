@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     env,
     error::Error,
     fs,
@@ -44,12 +44,17 @@ impl Iterator for Labeler {
         Some(String::from_utf8(vec![first_letter, second_letter]).expect("valid utf8 chars"))
     }
 }
-type Binds = BTreeMap<String, PathBuf>;
+
+type Binds = Vec<Bind>;
+struct Bind {
+    label: String,
+    path: PathBuf,
+}
 
 fn match_binds(ans: &str, binds: Binds) -> Binds {
     binds
         .into_iter()
-        .filter(|(label, _)| label.starts_with(ans))
+        .filter(|bind| bind.label.starts_with(ans))
         .collect()
 }
 
@@ -108,17 +113,22 @@ fn main() -> Result<()> {
         exit(1)
     });
 
-    let entries = fs::read_dir(&opts.base_path)?
+    let mut entries = fs::read_dir(&opts.base_path)?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|e| {
             e.file_name()
                 .map(|filename| !filename.to_string_lossy().starts_with(".") || opts.show_hidden)
                 .unwrap_or(false)
-        });
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
 
     let labels = Labeler::new().into_iter();
 
-    let mut binds = labels.zip(entries.into_iter()).collect::<Binds>();
+    let mut binds = labels
+        .zip(entries.into_iter())
+        .map(|(label, path)| Bind { label, path })
+        .collect::<Binds>();
 
     let mut renderer = {
         let (x, y) = cursor::position()?;
@@ -158,8 +168,11 @@ fn main() -> Result<()> {
     }
 
     renderer.restore()?;
-
-    if let Some(entry) = binds.get(&ans) {
+    let bind_map = binds
+        .into_iter()
+        .map(|bind| (bind.label, bind.path))
+        .collect::<HashMap<_, _>>();
+    if let Some(entry) = bind_map.get(&ans) {
         println!("{}", entry.to_string_lossy());
     } else {
         println!("Wrong label!");

@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::{
-    ExecutableCommand, QueueableCommand, cursor, execute, queue,
+    cursor, execute, queue,
     style::{self, Stylize},
     terminal::{self, ClearType},
 };
@@ -41,9 +41,9 @@ impl Renderer {
         queue!(self.stderr, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
         let mut parent = PathBuf::default();
 
-        for (label, entry) in binds.iter().take(self.bounds.height as usize - 1) {
-            let label = label.strip_prefix(ans).unwrap_or(&label);
-            let new_parent = entry.parent().unwrap_or(&parent);
+        for bind in binds.iter().take(self.bounds.height as usize - 1) {
+            let label = bind.label.strip_prefix(ans).unwrap_or(&bind.label);
+            let new_parent = bind.path.parent().unwrap_or(&parent);
 
             if new_parent != parent {
                 parent = new_parent.to_path_buf();
@@ -53,13 +53,14 @@ impl Renderer {
                 )?;
             }
 
-            let filename = entry
+            let filename = bind
+                .path
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
 
-            let entry = match entry.is_dir() {
+            let entry = match bind.path.is_dir() {
                 true => filename.bold().dark_blue(),
                 false => filename.stylize(),
             };
