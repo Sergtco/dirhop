@@ -61,7 +61,7 @@ impl Renderer {
                 .to_string();
 
             let entry = match bind.path.is_dir() {
-                true => filename.bold().dark_blue(),
+                true => (filename + "/").bold().dark_blue(),
                 false => filename.stylize(),
             };
 
