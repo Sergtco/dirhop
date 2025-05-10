@@ -99,6 +99,7 @@ fn usage() {
     println!("dirhop [PATH] [FLAGS]");
     println!("");
     println!("-h show hidden files");
+    println!("--help show this help message");
 }
 
 fn main() -> Result<()> {
