@@ -102,8 +102,8 @@ fn usage() {
 }
 
 fn main() -> Result<()> {
-    if !io::stderr().is_tty() {
-        eprintln!("This is not a terminal, Babe!");
+    if !io::stdout().is_tty() {
+        eprintln!("This is not a terminal!");
         exit(1);
     }
 
