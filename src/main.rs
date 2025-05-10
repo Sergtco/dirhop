@@ -4,12 +4,11 @@ use std::{
     error::Error,
     fs,
     io::{self},
-    path::PathBuf,
     process::exit,
     result,
-    str::FromStr,
 };
 
+use args::{Opts, usage};
 use crossterm::{
     cursor,
     event::{Event, KeyEvent, KeyModifiers},
@@ -17,93 +16,16 @@ use crossterm::{
     tty::IsTty,
 };
 
+mod args;
 mod tui;
+mod util;
 use tui::{Rect, Renderer};
-
-struct Labeler(u16);
-
-impl Labeler {
-    const TAG_INDEX_LIMIT: u16 = 675;
-
-    fn new() -> Self {
-        Self(0)
-    }
-}
-
-impl Iterator for Labeler {
-    type Item = String;
-
-    fn next(&mut self) -> Option<String> {
-        if self.0 > Self::TAG_INDEX_LIMIT {
-            return None;
-        }
-
-        let first_letter = (self.0 / 26 + 97) as u8;
-        let second_letter = (self.0 % 26 + 97) as u8;
-        self.0 += 1;
-        Some(String::from_utf8(vec![first_letter, second_letter]).expect("valid utf8 chars"))
-    }
-}
-
-type Binds = Vec<Bind>;
-struct Bind {
-    label: String,
-    path: PathBuf,
-}
-
-fn match_binds(ans: &str, binds: Binds) -> Binds {
-    binds
-        .into_iter()
-        .filter(|bind| bind.label.starts_with(ans))
-        .collect()
-}
+use util::{Bind, Binds, Labeler, match_prefix};
 
 type Result<T> = result::Result<T, Box<dyn Error>>;
 
-#[derive(Debug, Default)]
-struct Opts {
-    program_name: String,
-    base_path: PathBuf,
-    show_hidden: bool,
-}
-
-impl Opts {
-    pub fn from_args(mut args: impl Iterator<Item = String>) -> Result<Self> {
-        let mut conf = Self::default();
-        conf.program_name = args.next().ok_or("Couldn't get program name")?;
-
-        while let Some(arg) = args.next() {
-            match arg.as_str() {
-                "-h" => conf.show_hidden = true,
-                "--help" => {
-                    usage();
-                    exit(0)
-                }
-                someflag if someflag.starts_with("-") => {
-                    return Err(format!("wrong flag: {someflag}").into());
-                }
-                rest => conf.base_path = PathBuf::from_str(&rest)?,
-            }
-        }
-
-        if conf.base_path.to_string_lossy().len() == 0 {
-            conf.base_path = ".".into();
-        }
-
-        Ok(conf)
-    }
-}
-
-fn usage() {
-    println!("USAGE:");
-    println!("dirhop [PATH] [FLAGS]");
-    println!("");
-    println!("-h show hidden files");
-    println!("--help show this help message");
-}
-
 fn main() -> Result<()> {
-    if !io::stdout().is_tty() {
+    if !io::stderr().is_tty() {
         eprintln!("This is not a terminal!");
         exit(1);
     }
@@ -158,7 +80,7 @@ fn main() -> Result<()> {
                 if let Some(key) = code.as_char() {
                     if modifiers.is_empty() {
                         ans.push(key);
-                        binds = match_binds(&ans, binds);
+                        binds = match_prefix(&binds, &ans);
 
                         renderer.draw_list(&ans, &binds)?;
                     }
