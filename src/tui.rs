@@ -4,9 +4,9 @@ use std::{
 };
 
 use crossterm::{
-    cursor, execute, queue,
+    ExecutableCommand, cursor, execute, queue,
     style::{self, Stylize},
-    terminal::{self, ClearType},
+    terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
 use crate::Binds;
@@ -29,10 +29,10 @@ impl Renderer {
     pub fn with_bounds(bounds: Rect) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
 
-        Ok(Self {
-            stderr: io::stderr(),
-            bounds,
-        })
+        let mut stderr = io::stderr();
+        stderr.execute(EnterAlternateScreen)?;
+
+        Ok(Self { stderr, bounds })
     }
 
     pub fn draw_list(&mut self, ans: &str, binds: &Binds) -> io::Result<()> {
@@ -77,6 +77,7 @@ impl Renderer {
 
     pub fn restore(&mut self) -> io::Result<()> {
         self.clear_all()?;
+        self.stderr.execute(LeaveAlternateScreen)?;
         terminal::disable_raw_mode()
     }
 

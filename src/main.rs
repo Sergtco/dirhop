@@ -10,7 +10,6 @@ use std::{
 
 use args::{Opts, usage};
 use crossterm::{
-    cursor,
     event::{Event, KeyEvent, KeyModifiers},
     terminal,
     tty::IsTty,
@@ -54,7 +53,7 @@ fn main() -> Result<()> {
         .collect::<Binds>();
 
     let mut renderer = {
-        let (x, y) = cursor::position()?;
+        let (x, y) = (0, 0);
         let (width, height) = terminal::size()?;
         Renderer::with_bounds(Rect {
             x,
