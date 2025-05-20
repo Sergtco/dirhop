@@ -1,4 +1,5 @@
 use std::{
+    fs,
     io::{self, Write},
     path::PathBuf,
 };
@@ -49,7 +50,10 @@ impl Renderer {
                 parent = new_parent.to_path_buf();
                 queue!(
                     self.stderr,
-                    style::Print(format!("{}\r\n", parent.to_string_lossy())),
+                    style::Print(format!(
+                        "{}\r\n",
+                        fs::canonicalize(&parent)?.to_string_lossy()
+                    )),
                 )?;
             }
 
