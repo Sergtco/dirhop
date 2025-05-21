@@ -1,6 +1,7 @@
 use std::{
     fmt::{self},
     io::{self, Write},
+    thread, time,
 };
 
 use crossterm::{
@@ -40,7 +41,11 @@ impl Renderer {
         terminal::enable_raw_mode()?;
 
         let mut stderr = io::stderr();
-        stderr.execute(EnterAlternateScreen)?;
+        execute!(
+            stderr,
+            EnterAlternateScreen,
+            cursor::MoveTo(bounds.x, bounds.y)
+        )?;
 
         Ok(Self { stderr, bounds })
     }
@@ -62,18 +67,28 @@ impl Renderer {
         queue!(self.stderr, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
 
         self.stderr.queue(style::Print(format!("{}\r\n", header)))?;
+        self.stderr.queue(style::Print("\r\n"))?;
 
-        for bind in binds.into_iter().take(self.bounds.height as usize - 1) {
+        let mut items = Vec::new();
+        let mut max_item_size = 0;
+        for bind in binds.into_iter() {
             let label = bind.label.strip_prefix(ans).unwrap_or(&bind.label);
-            queue!(
-                self.stderr,
-                style::Print(format!(
-                    "    [{}{}]{}\r\n",
-                    ans.blue(),
-                    label,
-                    style(&bind.item)
-                )),
-            )?;
+            let item = format!("[{}{}]{}", ans.blue(), label, style(&bind.item));
+            max_item_size = max_item_size.max(item.len());
+            items.push(item);
+        }
+
+        for (col_offset, chunk) in items.chunks((self.bounds.height - 1).into()).enumerate() {
+            for (row_offset, item) in chunk.iter().enumerate() {
+                queue!(
+                    self.stderr,
+                    cursor::MoveTo(
+                        (self.bounds.x as usize + col_offset * max_item_size) as u16,
+                        self.bounds.y + 2 + row_offset as u16
+                    ),
+                    style::Print(item),
+                )?
+            }
         }
 
         self.stderr.flush()?;
