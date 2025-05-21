@@ -36,7 +36,7 @@ impl Renderer {
         Ok(Self { stderr, bounds })
     }
 
-    pub fn draw_list(&mut self, ans: &str, binds: &Binds) -> io::Result<()> {
+    pub fn draw_list(&mut self, ans: &str, binds: &Binds<&PathBuf>) -> io::Result<()> {
         self.clear_rect(self.bounds)?;
 
         queue!(self.stderr, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
@@ -44,7 +44,7 @@ impl Renderer {
 
         for bind in binds.iter().take(self.bounds.height as usize - 1) {
             let label = bind.label.strip_prefix(ans).unwrap_or(&bind.label);
-            let new_parent = bind.path.parent().unwrap_or(&parent);
+            let new_parent = bind.item.parent().unwrap_or(&parent);
 
             if new_parent != parent {
                 parent = new_parent.to_path_buf();
@@ -58,13 +58,13 @@ impl Renderer {
             }
 
             let filename = bind
-                .path
+                .item
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
 
-            let entry = match bind.path.is_dir() {
+            let entry = match bind.item.is_dir() {
                 true => (filename + "/").bold().dark_blue(),
                 false => filename.stylize(),
             };

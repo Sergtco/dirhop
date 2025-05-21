@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{error::Error, fmt::Display};
 
 pub struct Labeler(u16);
 
@@ -25,17 +25,60 @@ impl Iterator for Labeler {
     }
 }
 
-pub type Binds = Vec<Bind>;
-#[derive(Clone)]
-pub struct Bind {
-    pub label: String,
-    pub path: PathBuf,
+pub struct Binds<T: Clone>(Vec<Bind<T>>);
+
+impl<T: Clone> IntoIterator for Binds<T> {
+    type Item = Bind<T>;
+    type IntoIter = std::vec::IntoIter<Bind<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
 
-pub fn match_prefix(binds: &Binds, pfx: &str) -> Binds {
-    binds
-        .clone()
-        .into_iter()
-        .filter(|bind| bind.label.starts_with(pfx))
-        .collect()
+#[derive(Clone)]
+pub struct Bind<T: Clone> {
+    pub label: String,
+    pub item: T,
+}
+
+#[derive(Debug)]
+pub struct TooMuchElems;
+
+impl Display for TooMuchElems {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Too much elements")
+    }
+}
+
+impl Error for TooMuchElems {}
+
+impl<T: Clone> Binds<T> {
+    pub fn new(items: impl IntoIterator<Item = T>) -> Result<Self, TooMuchElems> {
+        let mut labeler = Labeler::new();
+        Ok(Self(
+            items
+                .into_iter()
+                .map(|item| {
+                    Ok(Bind {
+                        label: labeler.next().ok_or(TooMuchElems)?,
+                        item,
+                    })
+                })
+                .collect::<Result<Vec<_>, TooMuchElems>>()?,
+        ))
+    }
+
+    pub fn match_prefix(&mut self, pfx: &str) {
+        self.0 = self
+            .0
+            .iter()
+            .filter(|bind| bind.label.starts_with(pfx))
+            .cloned()
+            .collect();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Bind<T>> {
+        self.0.iter()
+    }
 }
