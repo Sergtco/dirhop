@@ -73,13 +73,12 @@ impl<T: Clone> Binds<T> {
         ))
     }
 
-    pub fn match_prefix(&mut self, pfx: &str) {
-        self.0 = self
-            .0
+    pub fn is_valid_prefix(&self, pfx: &str) -> bool {
+        self.0
             .iter()
             .filter(|bind| bind.label.starts_with(pfx))
-            .cloned()
-            .collect();
+            .count()
+            > 0
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Bind<T>> {

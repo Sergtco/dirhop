@@ -1,7 +1,7 @@
 use std::{
-    fmt::{self},
+    fmt,
     io::{self, Write},
-    thread, time,
+    ops::Div,
 };
 
 use crossterm::{
@@ -73,20 +73,31 @@ impl Renderer {
         let mut max_item_size = 0;
         for bind in binds.into_iter() {
             let label = bind.label.strip_prefix(ans).unwrap_or(&bind.label);
-            let item = format!("[{}{}]{}", ans.blue(), label, style(&bind.item));
-            max_item_size = max_item_size.max(item.len());
+            let ans = if label.len() == 2 { "" } else { ans };
+            let item = (ans, label, &bind.item);
+            let item_size = format!("[{}{}]{}", ans, label, bind.item).len();
+            max_item_size = max_item_size.max(item_size + 1);
             items.push(item);
         }
 
-        for (col_offset, chunk) in items.chunks((self.bounds.height - 1).into()).enumerate() {
-            for (row_offset, item) in chunk.iter().enumerate() {
+        let mut chunk_size = self.bounds.height;
+        for size in (self.bounds.height.div(2)..self.bounds.height).rev() {
+            let n_cols = items.len().div_ceil(size.into());
+            if n_cols * max_item_size > self.bounds.width.into() {
+                break;
+            }
+            chunk_size = size;
+        }
+
+        for (col_ind, chunk) in items.chunks(chunk_size.into()).enumerate() {
+            for (row_ind, item) in chunk.iter().enumerate() {
                 queue!(
                     self.stderr,
                     cursor::MoveTo(
-                        (self.bounds.x as usize + col_offset * max_item_size) as u16,
-                        self.bounds.y + 2 + row_offset as u16
+                        (self.bounds.x as usize + col_ind * max_item_size) as u16,
+                        self.bounds.y + 2 + row_ind as u16
                     ),
-                    style::Print(item),
+                    style::Print(format!("[{}{}]{}", item.0.blue(), item.1, style(item.2))),
                 )?
             }
         }

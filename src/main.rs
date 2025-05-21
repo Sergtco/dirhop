@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     env,
     error::Error,
@@ -45,9 +46,29 @@ fn main() -> Result<()> {
         })
         .map(|pb| DisplayablePathBuf::from(pb))
         .collect::<Vec<_>>();
-    entries.sort();
 
-    let mut binds = Binds::new(&entries)?;
+    entries.sort_by(|a, b| {
+        let order = a
+            .get()
+            .to_string_lossy()
+            .to_lowercase()
+            .trim_start_matches(".")
+            .cmp(
+                b.get()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .trim_start_matches("."),
+            );
+        if !(a.get().is_dir() ^ b.get().is_dir()) {
+            order
+        } else if a.get().is_dir() {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }
+    });
+
+    let binds = Binds::new(&entries)?;
 
     let mut renderer = Renderer::new_fullscreen()?;
 
@@ -83,7 +104,10 @@ fn main() -> Result<()> {
                 if let Some(key) = code.as_char() {
                     if modifiers.is_empty() {
                         input.push(key);
-                        binds.match_prefix(&input);
+
+                        if !binds.is_valid_prefix(&input) {
+                            input.pop();
+                        }
 
                         renderer.draw_list(
                             &input,
