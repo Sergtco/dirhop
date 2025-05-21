@@ -1,4 +1,8 @@
-use std::{error::Error, fmt::Display};
+use std::{
+    error::Error,
+    fmt::{self, Display},
+    path::PathBuf,
+};
 
 pub struct Labeler(u16);
 
@@ -80,5 +84,30 @@ impl<T: Clone> Binds<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = &Bind<T>> {
         self.0.iter()
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DisplayablePathBuf(PathBuf);
+
+impl DisplayablePathBuf {
+    pub fn get(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl From<PathBuf> for DisplayablePathBuf {
+    fn from(value: PathBuf) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for DisplayablePathBuf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0
+            .file_name()
+            .map(|fname| fname.to_string_lossy())
+            .unwrap_or("".into())
+            .fmt(f)
     }
 }

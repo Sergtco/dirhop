@@ -1,16 +1,15 @@
 use std::{
-    fs,
+    fmt::{self},
     io::{self, Write},
-    path::PathBuf,
 };
 
 use crossterm::{
-    ExecutableCommand, cursor, execute, queue,
-    style::{self, Stylize},
+    ExecutableCommand, QueueableCommand, cursor, execute, queue,
+    style::{self, StyledContent, Stylize},
     terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::Binds;
+use crate::util::Bind;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -27,7 +26,17 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn with_bounds(bounds: Rect) -> io::Result<Self> {
+    pub fn new_fullscreen() -> io::Result<Self> {
+        let (width, height) = terminal::size()?;
+        Ok(Renderer::new_with_bounds(Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        })?)
+    }
+
+    pub fn new_with_bounds(bounds: Rect) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
 
         let mut stderr = io::stderr();
@@ -36,42 +45,34 @@ impl Renderer {
         Ok(Self { stderr, bounds })
     }
 
-    pub fn draw_list(&mut self, ans: &str, binds: &Binds<&PathBuf>) -> io::Result<()> {
+    pub fn draw_list<'a, T, Style, D>(
+        &mut self,
+        ans: &str,
+        header: impl fmt::Display,
+        binds: impl IntoIterator<Item = &'a Bind<T>>,
+        style: Style,
+    ) -> io::Result<()>
+    where
+        T: fmt::Display + Clone + 'a,
+        Style: Fn(&T) -> StyledContent<D>,
+        D: fmt::Display,
+    {
         self.clear_rect(self.bounds)?;
 
         queue!(self.stderr, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
-        let mut parent = PathBuf::default();
 
-        for bind in binds.iter().take(self.bounds.height as usize - 1) {
+        self.stderr.queue(style::Print(format!("{}\r\n", header)))?;
+
+        for bind in binds.into_iter().take(self.bounds.height as usize - 1) {
             let label = bind.label.strip_prefix(ans).unwrap_or(&bind.label);
-            let new_parent = bind.item.parent().unwrap_or(&parent);
-
-            if new_parent != parent {
-                parent = new_parent.to_path_buf();
-                queue!(
-                    self.stderr,
-                    style::Print(format!(
-                        "{}\r\n",
-                        fs::canonicalize(&parent)?.to_string_lossy()
-                    )),
-                )?;
-            }
-
-            let filename = bind
-                .item
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let entry = match bind.item.is_dir() {
-                true => (filename + "/").bold().dark_blue(),
-                false => filename.stylize(),
-            };
-
             queue!(
                 self.stderr,
-                style::Print(format!("    [{}{}]{}\r\n", ans.blue(), label, entry)),
+                style::Print(format!(
+                    "    [{}{}]{}\r\n",
+                    ans.blue(),
+                    label,
+                    style(&bind.item)
+                )),
             )?;
         }
 
