@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    fmt::Display,
     io::{self, Write},
     ops::Div,
 };
@@ -52,15 +52,15 @@ impl Renderer {
 
     pub fn draw_list<'a, T, Style, D>(
         &mut self,
-        ans: &str,
-        header: impl fmt::Display,
+        input: &str,
+        header: impl Display,
         binds: impl IntoIterator<Item = &'a Bind<T>>,
         style: Style,
     ) -> io::Result<()>
     where
-        T: fmt::Display + Clone + 'a,
+        T: Display + Clone + 'a,
         Style: Fn(&T) -> StyledContent<D>,
-        D: fmt::Display,
+        D: Display,
     {
         self.clear_rect(self.bounds)?;
 
@@ -72,11 +72,13 @@ impl Renderer {
         let mut items = Vec::new();
         let mut max_item_size = 0;
         for bind in binds.into_iter() {
-            let label = bind.label.strip_prefix(ans).unwrap_or(&bind.label);
-            let ans = if label.len() == 2 { "" } else { ans };
+            let label = bind.label.strip_prefix(input).unwrap_or(&bind.label);
+            let ans = if label.len() == 2 { "" } else { input };
             let item = (ans, label, &bind.item);
+
             let item_size = format!("[{}{}]{}", ans, label, bind.item).len();
             max_item_size = max_item_size.max(item_size + 1);
+
             items.push(item);
         }
 

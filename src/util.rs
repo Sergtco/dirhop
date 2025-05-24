@@ -29,9 +29,9 @@ impl Iterator for Labeler {
     }
 }
 
-pub struct Binds<T: Clone>(Vec<Bind<T>>);
+pub struct Matcher<T: Clone>(Vec<Bind<T>>);
 
-impl<T: Clone> IntoIterator for Binds<T> {
+impl<T: Clone> IntoIterator for Matcher<T> {
     type Item = Bind<T>;
     type IntoIter = std::vec::IntoIter<Bind<T>>;
 
@@ -57,7 +57,7 @@ impl Display for TooMuchElems {
 
 impl Error for TooMuchElems {}
 
-impl<T: Clone> Binds<T> {
+impl<T: Clone> Matcher<T> {
     pub fn new(items: impl IntoIterator<Item = T>) -> Result<Self, TooMuchElems> {
         let mut labeler = Labeler::new();
         Ok(Self(
@@ -69,19 +69,18 @@ impl<T: Clone> Binds<T> {
                         item,
                     })
                 })
-                .collect::<Result<Vec<_>, TooMuchElems>>()?,
+                .collect::<Result<Vec<_>, _>>()?,
         ))
     }
 
     pub fn is_valid_prefix(&self, pfx: &str) -> bool {
         self.0
             .iter()
-            .filter(|bind| bind.label.starts_with(pfx))
-            .count()
-            > 0
+            .find(|bind| bind.label.starts_with(pfx))
+            .is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Bind<T>> {
+    pub fn iter_all(&self) -> impl Iterator<Item = &Bind<T>> {
         self.0.iter()
     }
 }

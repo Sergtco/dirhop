@@ -5,7 +5,7 @@ use std::{
     error::Error,
     fs,
     io::{self},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::exit,
     result,
 };
@@ -21,7 +21,7 @@ mod args;
 mod tui;
 mod util;
 use tui::Renderer;
-use util::{Binds, DisplayablePathBuf};
+use util::{DisplayablePathBuf, Matcher};
 
 type Result<T> = result::Result<T, Box<dyn Error>>;
 
@@ -37,13 +37,81 @@ fn main() -> Result<()> {
         exit(1)
     });
 
-    let mut entries = fs::read_dir(&opts.base_path)?
+    let entries = get_entries(&opts.base_path).unwrap_or_else(|err| {
+        eprintln!("Error reading directory {err}");
+        exit(1)
+    });
+
+    let matcher = Matcher::new(&entries)?;
+
+    let Some(entry) = entries.get(0) else { exit(0) };
+
+    let parent = fs::canonicalize(entry.get().parent().unwrap_or(&PathBuf::new()))
+        .unwrap_or(PathBuf::default());
+
+    let style = |bind: &&DisplayablePathBuf| match bind.get().is_dir() {
+        true => bind.to_string().blue(),
+        false => bind.to_string().stylize(),
+    };
+
+    let mut renderer = Renderer::new_fullscreen()?;
+
+    let mut input = String::new();
+    renderer.draw_list(
+        &input,
+        parent.to_string_lossy().yellow(),
+        matcher.iter_all(),
+        style,
+    )?;
+
+    while input.len() < 2 {
+        match crossterm::event::read()? {
+            Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) => {
+                if code.is_char('c') && modifiers == KeyModifiers::CONTROL {
+                    renderer.restore()?;
+                    return Ok(());
+                }
+
+                if let Some(key) = code.as_char() {
+                    if modifiers.is_empty() {
+                        input.push(key);
+
+                        if !matcher.is_valid_prefix(&input) {
+                            input.pop();
+                        }
+
+                        renderer.draw_list(
+                            &input,
+                            parent.to_string_lossy().yellow(),
+                            matcher.iter_all(),
+                            style,
+                        )?;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    renderer.restore()?;
+    let bind_map = matcher
+        .into_iter()
+        .map(|bind| (bind.label, bind.item))
+        .collect::<HashMap<_, _>>();
+
+    if let Some(entry) = bind_map.get(&input) {
+        println!("{}", entry.get().to_string_lossy());
+    } else {
+        println!("Wrong label!");
+    }
+    Ok(())
+}
+
+fn get_entries<P: AsRef<Path>>(dirname: P) -> io::Result<Vec<DisplayablePathBuf>> {
+    let mut entries = fs::read_dir(dirname.as_ref())?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|e| {
-            e.file_name()
-                .map(|filename| !filename.to_string_lossy().starts_with(".") || opts.show_hidden)
-                .unwrap_or(false)
-        })
         .map(|pb| DisplayablePathBuf::from(pb))
         .collect::<Vec<_>>();
 
@@ -68,70 +136,5 @@ fn main() -> Result<()> {
         }
     });
 
-    let binds = Binds::new(&entries)?;
-
-    let mut renderer = Renderer::new_fullscreen()?;
-
-    let mut input = String::new();
-
-    let Some(entry) = entries.get(0) else { exit(0) };
-
-    let parent = fs::canonicalize(entry.get().parent().unwrap_or(&PathBuf::new()))
-        .unwrap_or(PathBuf::default());
-
-    let style = |bind: &&DisplayablePathBuf| match bind.get().is_dir() {
-        true => bind.to_string().blue(),
-        false => bind.to_string().stylize(),
-    };
-
-    renderer.draw_list(
-        &input,
-        parent.to_string_lossy().yellow(),
-        binds.iter(),
-        style,
-    )?;
-
-    while input.len() < 2 {
-        match crossterm::event::read()? {
-            Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) => {
-                if code.is_char('c') && modifiers == KeyModifiers::CONTROL {
-                    renderer.restore()?;
-                    return Ok(());
-                }
-
-                if let Some(key) = code.as_char() {
-                    if modifiers.is_empty() {
-                        input.push(key);
-
-                        if !binds.is_valid_prefix(&input) {
-                            input.pop();
-                        }
-
-                        renderer.draw_list(
-                            &input,
-                            parent.to_string_lossy().yellow(),
-                            binds.iter(),
-                            style,
-                        )?;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    renderer.restore()?;
-    let bind_map = binds
-        .into_iter()
-        .map(|bind| (bind.label, bind.item))
-        .collect::<HashMap<_, _>>();
-
-    if let Some(entry) = bind_map.get(&input) {
-        println!("{}", entry.get().to_string_lossy());
-    } else {
-        println!("Wrong label!");
-    }
-    Ok(())
+    Ok(entries)
 }
