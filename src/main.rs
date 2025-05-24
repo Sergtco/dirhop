@@ -1,18 +1,18 @@
 use std::{
     cmp::Ordering,
-    collections::HashMap,
     env,
     error::Error,
-    fs,
+    fs::{self, canonicalize},
     io::{self},
     path::{Path, PathBuf},
     process::exit,
     result,
+    str::FromStr,
 };
 
 use args::{Opts, usage};
 use crossterm::{
-    event::{Event, KeyEvent, KeyModifiers},
+    event::{Event, KeyCode, KeyEvent, KeyModifiers},
     style::Stylize,
     tty::IsTty,
 };
@@ -37,75 +37,97 @@ fn main() -> Result<()> {
         exit(1)
     });
 
-    let entries = get_entries(&opts.base_path).unwrap_or_else(|err| {
-        eprintln!("Error reading directory {err}");
-        exit(1)
-    });
-
-    let matcher = Matcher::new(&entries)?;
-
-    let Some(entry) = entries.get(0) else { exit(0) };
-
-    let parent = fs::canonicalize(entry.get().parent().unwrap_or(&PathBuf::new()))
-        .unwrap_or(PathBuf::default());
-
-    let style = |bind: &&DisplayablePathBuf| match bind.get().is_dir() {
-        true => bind.to_string().blue(),
-        false => bind.to_string().stylize(),
-    };
-
+    let mut path = opts.base_path.clone();
     let mut renderer = Renderer::new_fullscreen()?;
+    'outer: loop {
+        let entries = get_entries(&path).unwrap_or_else(|err| {
+            renderer.restore().unwrap();
+            eprintln!("Error reading directory {err}");
+            exit(1)
+        });
 
-    let mut input = String::new();
-    renderer.draw_list(
-        &input,
-        parent.to_string_lossy().yellow(),
-        matcher.iter_all(),
-        style,
-    )?;
+        let matcher = Matcher::new(&entries)?;
 
-    while input.len() < 2 {
-        match crossterm::event::read()? {
-            Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) => {
-                if code.is_char('c') && modifiers == KeyModifiers::CONTROL {
-                    renderer.restore()?;
-                    return Ok(());
-                }
+        let Some(entry) = entries.get(0) else {
+            renderer.restore()?;
+            exit(0)
+        };
 
-                if let Some(key) = code.as_char() {
-                    if modifiers.is_empty() {
-                        input.push(key);
+        let parent = fs::canonicalize(entry.get().parent().unwrap_or(&PathBuf::new()))
+            .unwrap_or(PathBuf::default());
 
-                        if !matcher.is_valid_prefix(&input) {
-                            input.pop();
+        let style = |bind: &&DisplayablePathBuf| match bind.get().is_dir() {
+            true => bind.to_string().blue(),
+            false => bind.to_string().stylize(),
+        };
+
+        let mut input = String::new();
+        renderer.draw_list(
+            &input,
+            parent.to_string_lossy().yellow(),
+            matcher.iter_all(),
+            style,
+        )?;
+
+        let mut dot_pressed = false;
+        while input.len() < 2 {
+            match crossterm::event::read()? {
+                Event::Key(KeyEvent {
+                    code, modifiers, ..
+                }) => {
+                    if code.is_char('c') && modifiers == KeyModifiers::CONTROL {
+                        renderer.restore()?;
+                        break 'outer;
+                    } else if code == KeyCode::Enter {
+                        renderer.restore()?;
+                        break 'outer;
+                    } else if let Some(key) = code.as_char() {
+                        if modifiers.is_empty() {
+                            #[allow(unused_assignments)]
+                            match key {
+                                '.' if dot_pressed => {
+                                    dot_pressed = false;
+                                    path = canonicalize(path)
+                                        .unwrap()
+                                        .parent()
+                                        .unwrap_or(&PathBuf::from_str("/").unwrap())
+                                        .to_path_buf();
+                                    continue 'outer;
+                                }
+                                '.' => {
+                                    dot_pressed = true;
+                                }
+                                key => {
+                                    input.push(key);
+
+                                    if !matcher.is_valid_prefix(&input) {
+                                        input.pop();
+                                    }
+
+                                    renderer.draw_list(
+                                        &input,
+                                        parent.to_string_lossy().yellow(),
+                                        matcher.iter_all(),
+                                        style,
+                                    )?;
+                                }
+                            }
                         }
-
-                        renderer.draw_list(
-                            &input,
-                            parent.to_string_lossy().yellow(),
-                            matcher.iter_all(),
-                            style,
-                        )?;
                     }
                 }
+                _ => {}
             }
-            _ => {}
         }
+        if let Some(entry) = matcher.find_exact(&input) {
+            path = entry.get().clone();
+        } else {
+            renderer.restore()?;
+            eprintln!("Wrong label!");
+            exit(1);
+        };
     }
-
     renderer.restore()?;
-    let bind_map = matcher
-        .into_iter()
-        .map(|bind| (bind.label, bind.item))
-        .collect::<HashMap<_, _>>();
-
-    if let Some(entry) = bind_map.get(&input) {
-        println!("{}", entry.get().to_string_lossy());
-    } else {
-        println!("Wrong label!");
-    }
+    println!("{}", path.display());
     Ok(())
 }
 

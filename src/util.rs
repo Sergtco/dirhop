@@ -74,10 +74,14 @@ impl<T: Clone> Matcher<T> {
     }
 
     pub fn is_valid_prefix(&self, pfx: &str) -> bool {
-        self.0
-            .iter()
+        self.iter_all()
             .find(|bind| bind.label.starts_with(pfx))
             .is_some()
+    }
+
+    pub fn find_exact(&self, label: &str) -> Option<T> {
+        self.iter_all()
+            .find_map(|bind| bind.label.eq(label).then_some(bind.item.clone()))
     }
 
     pub fn iter_all(&self) -> impl Iterator<Item = &Bind<T>> {
