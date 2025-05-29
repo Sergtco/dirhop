@@ -14,6 +14,7 @@ use args::{Opts, usage};
 use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers},
     style::Stylize,
+    terminal,
     tty::IsTty,
 };
 
@@ -21,7 +22,7 @@ mod args;
 mod tui;
 mod util;
 use tui::Renderer;
-use util::{DisplayablePathBuf, Matcher};
+use util::{DisplayablePathBuf, Matcher, Rect};
 
 type Result<T> = result::Result<T, Box<dyn Error>>;
 
@@ -38,7 +39,16 @@ fn main() -> Result<()> {
     });
 
     let mut path = opts.base_path.clone();
-    let mut renderer = Renderer::new_fullscreen()?;
+    let bounds = {
+        let (width, height) = terminal::size()?;
+        Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }
+    };
+    let mut renderer = Renderer::new_with_bounds(bounds)?;
     'outer: loop {
         let entries = get_entries(&path).unwrap_or_else(|err| {
             renderer.restore().unwrap();
@@ -46,7 +56,15 @@ fn main() -> Result<()> {
             exit(1)
         });
 
-        let matcher = Matcher::new(&entries)?;
+        let matcher = Matcher::new(
+            &entries,
+            Rect {
+                x: bounds.x,
+                y: bounds.y + 2,
+                width: bounds.width,
+                height: bounds.height - 2,
+            },
+        );
 
         let Some(entry) = entries.get(0) else {
             renderer.restore()?;
@@ -62,12 +80,8 @@ fn main() -> Result<()> {
         };
 
         let mut input = String::new();
-        renderer.draw_list(
-            &input,
-            parent.to_string_lossy().yellow(),
-            matcher.iter_all(),
-            style,
-        )?;
+        let curr_page = matcher.get(0).unwrap();
+        renderer.draw_list(&input, parent.to_string_lossy().yellow(), curr_page, style)?;
 
         let mut dot_pressed = false;
         while input.len() < 2 {
@@ -100,14 +114,14 @@ fn main() -> Result<()> {
                                 key => {
                                     input.push(key);
 
-                                    if !matcher.is_valid_prefix(&input) {
+                                    if !curr_page.is_prefix_valid(&input) {
                                         input.pop();
                                     }
 
                                     renderer.draw_list(
                                         &input,
                                         parent.to_string_lossy().yellow(),
-                                        matcher.iter_all(),
+                                        curr_page,
                                         style,
                                     )?;
                                 }
@@ -118,7 +132,7 @@ fn main() -> Result<()> {
                 _ => {}
             }
         }
-        if let Some(entry) = matcher.find_exact(&input) {
+        if let Some(entry) = curr_page.find(&input) {
             path = entry.get().clone();
         } else {
             renderer.restore()?;

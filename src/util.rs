@@ -1,8 +1,15 @@
 use std::{
-    error::Error,
     fmt::{self, Display},
     path::PathBuf,
 };
+
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
 
 pub struct Labeler(u16);
 
@@ -29,63 +36,63 @@ impl Iterator for Labeler {
     }
 }
 
-pub struct Matcher<T: Clone>(Vec<Bind<T>>);
+pub struct Matcher<T: Display> {
+    items: Vec<T>,
+    entry_size: usize,
+    bounds: Rect,
+}
+impl<T: Display> Matcher<T> {
+    pub fn new(items: impl IntoIterator<Item = T>, bounds: Rect) -> Self {
+        let items = Vec::from_iter(items);
+        let entry_size = items
+            .iter()
+            .max_by_key(|x| x.to_string().len())
+            .map(|x| x.to_string().len())
+            .unwrap_or_default();
 
-impl<T: Clone> IntoIterator for Matcher<T> {
-    type Item = Bind<T>;
-    type IntoIter = std::vec::IntoIter<Bind<T>>;
+        Self {
+            items,
+            entry_size,
+            bounds,
+        }
+    }
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+    pub fn get(&self, n: usize) -> Option<MatcherPage<T>> {
+        let page_cap = self.bounds.width as usize / self.entry_size * self.bounds.height as usize;
+        Some(MatcherPage {
+            items: self.items.chunks(page_cap).nth(n)?,
+            entry_size: self.entry_size,
+        })
     }
 }
 
-#[derive(Clone)]
-pub struct Bind<T: Clone> {
-    pub label: String,
-    pub item: T,
+#[derive(Clone, Copy)]
+pub struct MatcherPage<'a, T: Display> {
+    items: &'a [T],
+    entry_size: usize,
 }
 
-#[derive(Debug)]
-pub struct TooMuchElems;
-
-impl Display for TooMuchElems {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Too much elements")
-    }
-}
-
-impl Error for TooMuchElems {}
-
-impl<T: Clone> Matcher<T> {
-    pub fn new(items: impl IntoIterator<Item = T>) -> Result<Self, TooMuchElems> {
-        let mut labeler = Labeler::new();
-        Ok(Self(
-            items
-                .into_iter()
-                .map(|item| {
-                    Ok(Bind {
-                        label: labeler.next().ok_or(TooMuchElems)?,
-                        item,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ))
-    }
-
-    pub fn is_valid_prefix(&self, pfx: &str) -> bool {
-        self.iter_all()
-            .find(|bind| bind.label.starts_with(pfx))
+impl<'a, T: Display> MatcherPage<'a, T> {
+    pub fn is_prefix_valid(&self, pfx: &str) -> bool {
+        self.items
+            .iter()
+            .zip(Labeler::new())
+            .find(|(_, label)| label.starts_with(pfx))
             .is_some()
     }
 
-    pub fn find_exact(&self, label: &str) -> Option<T> {
-        self.iter_all()
-            .find_map(|bind| bind.label.eq(label).then_some(bind.item.clone()))
+    pub fn find(&self, needle: &str) -> Option<&T> {
+        self.items
+            .iter()
+            .zip(Labeler::new())
+            .find_map(|(item, label)| needle.eq(&label).then_some(item))
     }
 
-    pub fn iter_all(&self) -> impl Iterator<Item = &Bind<T>> {
-        self.0.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (&T, String)> {
+        self.items.iter().zip(Labeler::new())
+    }
+    pub fn item_size(&self) -> usize {
+        self.entry_size
     }
 }
 
