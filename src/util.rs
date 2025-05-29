@@ -48,7 +48,7 @@ impl<T: Display> Matcher<T> {
             .iter()
             .max_by_key(|x| x.to_string().len())
             .map(|x| x.to_string().len())
-            .unwrap_or_default();
+            .unwrap_or(1);
 
         Self {
             items,
@@ -59,6 +59,12 @@ impl<T: Display> Matcher<T> {
 
     pub fn get(&self, n: usize) -> Option<MatcherPage<T>> {
         let page_cap = self.bounds.width as usize / self.entry_size * self.bounds.height as usize;
+        if self.items.is_empty() {
+            return Some(MatcherPage {
+                items: &[],
+                entry_size: self.entry_size,
+            });
+        }
         Some(MatcherPage {
             items: self.items.chunks(page_cap).nth(n)?,
             entry_size: self.entry_size,

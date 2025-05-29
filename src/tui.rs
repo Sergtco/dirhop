@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::{
-    ExecutableCommand, QueueableCommand, cursor, execute, queue,
+    QueueableCommand, cursor, execute, queue,
     style::{self, StyledContent, Stylize},
     terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -25,7 +25,8 @@ impl Renderer {
         execute!(
             stderr,
             EnterAlternateScreen,
-            cursor::MoveTo(bounds.x, bounds.y)
+            cursor::MoveTo(bounds.x, bounds.y),
+            cursor::Hide
         )?;
 
         Ok(Self { stderr, bounds })
@@ -74,7 +75,7 @@ impl Renderer {
 
     pub fn restore(&mut self) -> io::Result<()> {
         self.clear_all()?;
-        self.stderr.execute(LeaveAlternateScreen)?;
+        execute!(self.stderr, LeaveAlternateScreen, cursor::Show)?;
         terminal::disable_raw_mode()
     }
 

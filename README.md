@@ -13,7 +13,13 @@ Usage
 [ab]Pictures
 [ac]Programming
 [ad]Downloads
->ab
+>ab<CR>
 
 ~/Pictures $
 ```
+
+## Supported commands
+
+`..` - Go to parent directory.
+`>>` - Next page.
+`<<` - Prev page.

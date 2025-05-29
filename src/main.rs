@@ -2,12 +2,11 @@ use std::{
     cmp::Ordering,
     env,
     error::Error,
-    fs::{self, canonicalize},
+    fs,
     io::{self},
     path::{Path, PathBuf},
     process::exit,
     result,
-    str::FromStr,
 };
 
 use args::{Opts, usage};
@@ -38,7 +37,6 @@ fn main() -> Result<()> {
         exit(1)
     });
 
-    let mut path = opts.base_path.clone();
     let bounds = {
         let (width, height) = terminal::size()?;
         Rect {
@@ -49,8 +47,9 @@ fn main() -> Result<()> {
         }
     };
     let mut renderer = Renderer::new_with_bounds(bounds)?;
+    let mut parent = fs::canonicalize(opts.base_path).unwrap_or_default();
     'outer: loop {
-        let entries = get_entries(&path).unwrap_or_else(|err| {
+        let entries = get_entries(&parent).unwrap_or_else(|err| {
             renderer.restore().unwrap();
             eprintln!("Error reading directory {err}");
             exit(1)
@@ -66,24 +65,17 @@ fn main() -> Result<()> {
             },
         );
 
-        let Some(entry) = entries.get(0) else {
-            renderer.restore()?;
-            exit(0)
-        };
-
-        let parent = fs::canonicalize(entry.get().parent().unwrap_or(&PathBuf::new()))
-            .unwrap_or(PathBuf::default());
-
         let style = |bind: &&DisplayablePathBuf| match bind.get().is_dir() {
             true => bind.to_string().blue(),
             false => bind.to_string().stylize(),
         };
 
         let mut input = String::new();
-        let curr_page = matcher.get(0).unwrap();
+        let mut cmdbuf = String::new();
+        let mut page_num = 0;
+        let mut curr_page = matcher.get(0).unwrap();
         renderer.draw_list(&input, parent.to_string_lossy().yellow(), curr_page, style)?;
 
-        let mut dot_pressed = false;
         while input.len() < 2 {
             match crossterm::event::read()? {
                 Event::Key(KeyEvent {
@@ -97,21 +89,8 @@ fn main() -> Result<()> {
                         break 'outer;
                     } else if let Some(key) = code.as_char() {
                         if modifiers.is_empty() {
-                            #[allow(unused_assignments)]
                             match key {
-                                '.' if dot_pressed => {
-                                    dot_pressed = false;
-                                    path = canonicalize(path)
-                                        .unwrap()
-                                        .parent()
-                                        .unwrap_or(&PathBuf::from_str("/").unwrap())
-                                        .to_path_buf();
-                                    continue 'outer;
-                                }
-                                '.' => {
-                                    dot_pressed = true;
-                                }
-                                key => {
+                                key if key.is_alphabetic() => {
                                     input.push(key);
 
                                     if !curr_page.is_prefix_valid(&input) {
@@ -125,6 +104,45 @@ fn main() -> Result<()> {
                                         style,
                                     )?;
                                 }
+                                '>' if cmdbuf.ends_with(">") => {
+                                    input.clear();
+                                    cmdbuf.clear();
+                                    if let Some(next) = matcher.get(page_num + 1) {
+                                        page_num += 1;
+                                        curr_page = next;
+                                    }
+                                    renderer.draw_list(
+                                        &input,
+                                        parent.to_string_lossy().yellow(),
+                                        curr_page,
+                                        style,
+                                    )?;
+                                }
+                                '<' if cmdbuf.ends_with("<") => {
+                                    input.clear();
+                                    cmdbuf.clear();
+                                    if let Some(prev) = matcher.get(page_num.wrapping_sub(1)) {
+                                        page_num -= 1;
+                                        curr_page = prev;
+                                    }
+                                    renderer.draw_list(
+                                        &input,
+                                        parent.to_string_lossy().yellow(),
+                                        curr_page,
+                                        style,
+                                    )?;
+                                }
+                                '.' if cmdbuf.ends_with(".") => {
+                                    cmdbuf.clear();
+                                    parent = parent
+                                        .parent()
+                                        .map(Path::to_path_buf)
+                                        .unwrap_or(PathBuf::from("/"));
+                                    continue 'outer;
+                                }
+                                key => {
+                                    cmdbuf.push(key);
+                                }
                             }
                         }
                     }
@@ -133,7 +151,10 @@ fn main() -> Result<()> {
             }
         }
         if let Some(entry) = curr_page.find(&input) {
-            path = entry.get().clone();
+            parent = entry.get().clone();
+            if entry.get().is_file() {
+                break 'outer;
+            }
         } else {
             renderer.restore()?;
             eprintln!("Wrong label!");
@@ -141,7 +162,7 @@ fn main() -> Result<()> {
         };
     }
     renderer.restore()?;
-    println!("{}", path.display());
+    println!("{}", parent.display());
     Ok(())
 }
 
