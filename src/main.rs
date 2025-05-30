@@ -24,6 +24,13 @@ use tui::Renderer;
 use util::{DisplayablePathBuf, Matcher, Rect};
 
 type Result<T> = result::Result<T, Box<dyn Error>>;
+#[derive(Debug)]
+enum AppEvent {
+    Quit,
+    Accept,
+    Key(char),
+    None,
+}
 
 fn main() -> Result<()> {
     if !io::stderr().is_tty() {
@@ -76,80 +83,62 @@ fn main() -> Result<()> {
         let mut curr_page = matcher.get(0).unwrap();
         renderer.draw_list(&input, parent.to_string_lossy().yellow(), curr_page, style)?;
 
-        while input.len() < 2 {
-            match crossterm::event::read()? {
-                Event::Key(KeyEvent {
-                    code, modifiers, ..
-                }) => {
-                    if code.is_char('c') && modifiers == KeyModifiers::CONTROL {
-                        renderer.restore()?;
-                        break 'outer;
-                    } else if code == KeyCode::Enter {
-                        renderer.restore()?;
-                        break 'outer;
-                    } else if let Some(key) = code.as_char() {
-                        if modifiers.is_empty() {
-                            match key {
-                                key if key.is_alphabetic() => {
-                                    input.push(key);
+        loop {
+            match get_event()? {
+                AppEvent::Accept => break 'outer,
+                AppEvent::Quit => {
+                    renderer.restore()?;
+                    exit(0)
+                }
+                AppEvent::Key(c) if c.is_alphabetic() => input.push(c),
+                AppEvent::Key(c) => cmdbuf.push(c),
+                _ => (),
+            };
 
-                                    if !curr_page.is_prefix_valid(&input) {
-                                        input.pop();
-                                    }
+            let mut input_changed = false;
+            if !curr_page.is_prefix_valid(&input) {
+                input.pop();
+            } else if input.len() == 1 {
+                input_changed = true
+            } else if input.len() == 2 {
+                break;
+            }
 
-                                    renderer.draw_list(
-                                        &input,
-                                        parent.to_string_lossy().yellow(),
-                                        curr_page,
-                                        style,
-                                    )?;
-                                }
-                                '>' if cmdbuf.ends_with(">") => {
-                                    input.clear();
-                                    cmdbuf.clear();
-                                    if let Some(next) = matcher.get(page_num + 1) {
-                                        page_num += 1;
-                                        curr_page = next;
-                                    }
-                                    renderer.draw_list(
-                                        &input,
-                                        parent.to_string_lossy().yellow(),
-                                        curr_page,
-                                        style,
-                                    )?;
-                                }
-                                '<' if cmdbuf.ends_with("<") => {
-                                    input.clear();
-                                    cmdbuf.clear();
-                                    if let Some(prev) = matcher.get(page_num.wrapping_sub(1)) {
-                                        page_num -= 1;
-                                        curr_page = prev;
-                                    }
-                                    renderer.draw_list(
-                                        &input,
-                                        parent.to_string_lossy().yellow(),
-                                        curr_page,
-                                        style,
-                                    )?;
-                                }
-                                '.' if cmdbuf.ends_with(".") => {
-                                    cmdbuf.clear();
-                                    parent = parent
-                                        .parent()
-                                        .map(Path::to_path_buf)
-                                        .unwrap_or(PathBuf::from("/"));
-                                    continue 'outer;
-                                }
-                                key => {
-                                    cmdbuf.push(key);
-                                }
-                            }
-                        }
+            let mut page_changed = false;
+            match &mut cmdbuf {
+                cmdbuf if cmdbuf.ends_with(">>") => {
+                    if let Some(next) = matcher.get(page_num + 1) {
+                        page_num += 1;
+                        curr_page = next;
+                        page_changed = true;
                     }
                 }
-                _ => {}
+                cmdbuf if cmdbuf.ends_with(">>") => {
+                    if let Some(prev) = matcher.get(page_num.wrapping_sub(1)) {
+                        page_num -= 1;
+                        curr_page = prev;
+                        page_changed = true;
+                    }
+                }
+                cmdbuf if cmdbuf.ends_with("..") => {
+                    parent = parent
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or(PathBuf::from("/"));
+                    continue 'outer;
+                }
+                _ => (),
+            }
+
+            if page_changed {
+                input.clear();
+                cmdbuf.clear();
+            }
+            if page_changed || input_changed {
+                renderer.draw_list(&input, parent.to_string_lossy().yellow(), curr_page, style)?;
             }
         }
+
         if let Some(entry) = curr_page.find(&input) {
             parent = entry.get().clone();
             if entry.get().is_file() {
@@ -159,7 +148,7 @@ fn main() -> Result<()> {
             renderer.restore()?;
             eprintln!("Wrong label!");
             exit(1);
-        };
+        }
     }
     renderer.restore()?;
     println!("{}", parent.display());
@@ -194,4 +183,18 @@ fn get_entries<P: AsRef<Path>>(dirname: P) -> io::Result<Vec<DisplayablePathBuf>
     });
 
     Ok(entries)
+}
+
+fn get_event() -> io::Result<AppEvent> {
+    match crossterm::event::read()? {
+        Event::Key(KeyEvent {
+            code, modifiers, ..
+        }) => match (code, modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Ok(AppEvent::Quit),
+            (KeyCode::Enter, KeyModifiers::NONE) => Ok(AppEvent::Accept),
+            (KeyCode::Char(key), KeyModifiers::NONE) => Ok(AppEvent::Key(key)),
+            _ => Ok(AppEvent::None),
+        },
+        _ => Ok(AppEvent::None),
+    }
 }
