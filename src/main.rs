@@ -119,14 +119,14 @@ fn main() -> Result<()> {
             }
 
             let mut next_page_num = page_num;
-            match &mut input {
-                cmdbuf if cmdbuf.ends_with(">>") => {
+            match input.get(input.len().wrapping_sub(2)..) {
+                Some(">>") => {
                     next_page_num += 1;
                 }
-                cmdbuf if cmdbuf.ends_with(">>") => {
+                Some("<<") => {
                     next_page_num = next_page_num.wrapping_sub(1);
                 }
-                cmdbuf if cmdbuf.ends_with("..") => {
+                Some("..") => {
                     parent = parent
                         .parent()
                         .map(Path::to_path_buf)

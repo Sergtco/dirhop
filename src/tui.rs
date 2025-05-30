@@ -13,7 +13,7 @@ use crate::util::{MatcherPage, Rect};
 
 #[derive(Debug)]
 pub struct Renderer {
-    stderr: io::Stderr,
+    buf: io::Stderr,
     bounds: Rect,
 }
 
@@ -21,15 +21,15 @@ impl Renderer {
     pub fn new_with_bounds(bounds: Rect) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
 
-        let mut stderr = io::stderr();
+        let mut buf = io::stderr();
         execute!(
-            stderr,
+            buf,
             EnterAlternateScreen,
             cursor::MoveTo(bounds.x, bounds.y),
             cursor::Hide
         )?;
 
-        Ok(Self { stderr, bounds })
+        Ok(Self { buf, bounds })
     }
 
     pub fn draw_list<'a, T, Style, D>(
@@ -46,10 +46,10 @@ impl Renderer {
     {
         self.clear_rect(self.bounds)?;
 
-        queue!(self.stderr, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
+        queue!(self.buf, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
 
-        self.stderr.queue(style::Print(format!("{}\r\n", header)))?;
-        self.stderr.queue(style::Print("\r\n"))?;
+        self.buf.queue(style::Print(format!("{}\r\n", header)))?;
+        self.buf.queue(style::Print("\r\n"))?;
 
         for (ind, bind) in page.iter().enumerate() {
             let row = ind % self.bounds.height as usize;
@@ -60,7 +60,7 @@ impl Renderer {
                 typed = input;
             }
             queue!(
-                self.stderr,
+                self.buf,
                 cursor::MoveTo(
                     (self.bounds.x as usize + col * (page.item_size() + 3)) as u16,
                     self.bounds.y + 2 + row as u16
@@ -69,13 +69,13 @@ impl Renderer {
             )?
         }
 
-        self.stderr.flush()?;
+        self.buf.flush()?;
         Ok(())
     }
 
     pub fn restore(&mut self) -> io::Result<()> {
         self.clear_all()?;
-        execute!(self.stderr, LeaveAlternateScreen, cursor::Show)?;
+        execute!(self.buf, LeaveAlternateScreen, cursor::Show)?;
         terminal::disable_raw_mode()
     }
 
@@ -83,19 +83,19 @@ impl Renderer {
         let spaces = " ".repeat(area.width as usize);
         for y in self.bounds.y..(self.bounds.y + self.bounds.height) {
             queue!(
-                self.stderr,
+                self.buf,
                 cursor::MoveTo(self.bounds.x, y),
                 style::Print(spaces.clone()),
             )?;
         }
 
-        self.stderr.flush()?;
+        self.buf.flush()?;
         Ok(())
     }
 
     pub fn clear_all(&mut self) -> io::Result<()> {
         execute!(
-            self.stderr,
+            self.buf,
             cursor::MoveTo(self.bounds.x, self.bounds.y),
             terminal::Clear(ClearType::FromCursorDown)
         )?;
