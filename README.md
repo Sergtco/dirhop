@@ -20,6 +20,9 @@ Usage
 
 ## Supported commands
 
-`..` - Go to parent directory.
-`>>` - Next page.
+`CTRL+H` - Show hidden.  
+`CTRL+C` - Quit.  
+`ESC` - Clear.  
+`..` - Go to parent directory.  
+`>>` - Next page.  
 `<<` - Prev page.

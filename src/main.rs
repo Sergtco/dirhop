@@ -30,6 +30,8 @@ enum AppEvent {
     Accept,
     Key(char),
     None,
+    ToggleHidden,
+    Clear,
 }
 
 fn main() -> Result<()> {
@@ -38,7 +40,7 @@ fn main() -> Result<()> {
         exit(1);
     }
 
-    let opts = Opts::from_args(env::args()).unwrap_or_else(|err| {
+    let mut opts = Opts::from_args(env::args()).unwrap_or_else(|err| {
         eprintln!("Argument error: {err}.");
         usage();
         exit(1)
@@ -54,9 +56,9 @@ fn main() -> Result<()> {
         }
     };
     let mut renderer = Renderer::new_with_bounds(bounds)?;
-    let mut parent = fs::canonicalize(opts.base_path).unwrap_or_default();
+    let mut parent = fs::canonicalize(&opts.base_path).unwrap_or_default();
     'outer: loop {
-        let entries = get_entries(&parent).unwrap_or_else(|err| {
+        let entries = get_entries(&parent, &opts).unwrap_or_else(|err| {
             renderer.restore().unwrap();
             eprintln!("Error reading directory {err}");
             exit(1)
@@ -78,47 +80,51 @@ fn main() -> Result<()> {
         };
 
         let mut input = String::new();
-        let mut cmdbuf = String::new();
-        let mut page_num = 0;
+        let mut pair = String::new();
+        let mut page_num = 0_usize;
         let mut curr_page = matcher.get(0).unwrap();
-        renderer.draw_list(&input, parent.to_string_lossy().yellow(), curr_page, style)?;
+        renderer.draw_list(&pair, parent.to_string_lossy().yellow(), curr_page, style)?;
 
         loop {
             match get_event()? {
                 AppEvent::Accept => break 'outer,
+                AppEvent::ToggleHidden => {
+                    opts.show_hidden = !opts.show_hidden;
+                    continue 'outer;
+                }
                 AppEvent::Quit => {
                     renderer.restore()?;
-                    exit(0)
+                    parent = env::current_dir()?;
+                    break 'outer;
                 }
-                AppEvent::Key(c) if c.is_alphabetic() => input.push(c),
-                AppEvent::Key(c) => cmdbuf.push(c),
-                _ => (),
+                AppEvent::Key(c) => {
+                    input.push(c);
+                    if c.is_alphabetic() {
+                        pair.push(c)
+                    }
+                }
+                AppEvent::Clear => {
+                    pair.clear();
+                }
+                AppEvent::None => (),
             };
 
-            let mut input_changed = false;
-            if !curr_page.is_prefix_valid(&input) {
-                input.pop();
-            } else if input.len() == 1 {
-                input_changed = true
-            } else if input.len() == 2 {
+            let mut pair_changed = false;
+            if !curr_page.is_prefix_valid(&pair) {
+                pair.pop();
+            } else if pair.len() <= 1 {
+                pair_changed = true
+            } else if pair.len() == 2 {
                 break;
             }
 
-            let mut page_changed = false;
-            match &mut cmdbuf {
+            let mut next_page_num = page_num;
+            match &mut input {
                 cmdbuf if cmdbuf.ends_with(">>") => {
-                    if let Some(next) = matcher.get(page_num + 1) {
-                        page_num += 1;
-                        curr_page = next;
-                        page_changed = true;
-                    }
+                    next_page_num += 1;
                 }
                 cmdbuf if cmdbuf.ends_with(">>") => {
-                    if let Some(prev) = matcher.get(page_num.wrapping_sub(1)) {
-                        page_num -= 1;
-                        curr_page = prev;
-                        page_changed = true;
-                    }
+                    next_page_num = next_page_num.wrapping_sub(1);
                 }
                 cmdbuf if cmdbuf.ends_with("..") => {
                     parent = parent
@@ -130,16 +136,19 @@ fn main() -> Result<()> {
                 _ => (),
             }
 
-            if page_changed {
+            if next_page_num != page_num {
                 input.clear();
-                cmdbuf.clear();
+                if let Some(next) = matcher.get(next_page_num) {
+                    curr_page = next;
+                    page_num = next_page_num;
+                }
             }
-            if page_changed || input_changed {
-                renderer.draw_list(&input, parent.to_string_lossy().yellow(), curr_page, style)?;
+            if next_page_num != page_num || pair_changed {
+                renderer.draw_list(&pair, parent.to_string_lossy().yellow(), curr_page, style)?;
             }
         }
 
-        if let Some(entry) = curr_page.find(&input) {
+        if let Some(entry) = curr_page.find(&pair) {
             parent = entry.get().clone();
             if entry.get().is_file() {
                 break 'outer;
@@ -155,9 +164,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn get_entries<P: AsRef<Path>>(dirname: P) -> io::Result<Vec<DisplayablePathBuf>> {
+fn get_entries<P: AsRef<Path>>(dirname: P, opts: &Opts) -> io::Result<Vec<DisplayablePathBuf>> {
     let mut entries = fs::read_dir(dirname.as_ref())?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|entry| {
+            !entry
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("."))
+                || opts.show_hidden
+        })
         .map(|pb| DisplayablePathBuf::from(pb))
         .collect::<Vec<_>>();
 
@@ -191,7 +206,9 @@ fn get_event() -> io::Result<AppEvent> {
             code, modifiers, ..
         }) => match (code, modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Ok(AppEvent::Quit),
+            (KeyCode::Char('h'), KeyModifiers::CONTROL) => Ok(AppEvent::ToggleHidden),
             (KeyCode::Enter, KeyModifiers::NONE) => Ok(AppEvent::Accept),
+            (KeyCode::Esc, KeyModifiers::NONE) => Ok(AppEvent::Clear),
             (KeyCode::Char(key), KeyModifiers::NONE) => Ok(AppEvent::Key(key)),
             _ => Ok(AppEvent::None),
         },
