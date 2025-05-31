@@ -1,15 +1,12 @@
 use std::{
-    cmp::Ordering,
     env,
     error::Error,
-    fs,
-    io::{self},
+    fs, io,
     path::{Path, PathBuf},
     process::exit,
     result,
 };
 
-use args::{Opts, usage};
 use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers},
     style::Stylize,
@@ -17,11 +14,12 @@ use crossterm::{
     tty::IsTty,
 };
 
-mod args;
-mod tui;
-mod util;
-use tui::Renderer;
-use util::{DisplayablePathBuf, Matcher, Rect};
+use dirhop::{
+    args::{Opts, usage},
+    get_entries,
+    tui::Renderer,
+    util::{DisplayablePathBuf, Matcher, Rect},
+};
 
 type Result<T> = result::Result<T, Box<dyn Error>>;
 #[derive(Debug)]
@@ -49,9 +47,9 @@ fn main() -> Result<()> {
     let bounds = {
         let (width, height) = terminal::size()?;
         Rect {
-            x: 0,
+            x: 2,
             y: 0,
-            width,
+            width: width - 2,
             height,
         }
     };
@@ -93,14 +91,13 @@ fn main() -> Result<()> {
                     continue 'outer;
                 }
                 AppEvent::Quit => {
-                    renderer.restore()?;
                     parent = env::current_dir()?;
                     break 'outer;
                 }
                 AppEvent::Key(c) => {
                     input.push(c);
                     if c.is_alphabetic() {
-                        pair.push(c)
+                        pair.push(c);
                     }
                 }
                 AppEvent::Clear => {
@@ -138,6 +135,7 @@ fn main() -> Result<()> {
 
             if next_page_num != page_num {
                 input.clear();
+                pair.clear();
                 if let Some(next) = matcher.get(next_page_num) {
                     curr_page = next;
                     page_num = next_page_num;
@@ -153,51 +151,11 @@ fn main() -> Result<()> {
             if entry.get().is_file() {
                 break 'outer;
             }
-        } else {
-            renderer.restore()?;
-            eprintln!("Wrong label!");
-            exit(1);
         }
     }
     renderer.restore()?;
     println!("{}", parent.display());
     Ok(())
-}
-
-fn get_entries<P: AsRef<Path>>(dirname: P, opts: &Opts) -> io::Result<Vec<DisplayablePathBuf>> {
-    let mut entries = fs::read_dir(dirname.as_ref())?
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|entry| {
-            !entry
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with("."))
-                || opts.show_hidden
-        })
-        .map(|pb| DisplayablePathBuf::from(pb))
-        .collect::<Vec<_>>();
-
-    entries.sort_by(|a, b| {
-        let order = a
-            .get()
-            .to_string_lossy()
-            .to_lowercase()
-            .trim_start_matches(".")
-            .cmp(
-                b.get()
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .trim_start_matches("."),
-            );
-        if !(a.get().is_dir() ^ b.get().is_dir()) {
-            order
-        } else if a.get().is_dir() {
-            Ordering::Less
-        } else {
-            Ordering::Greater
-        }
-    });
-
-    Ok(entries)
 }
 
 fn get_event() -> io::Result<AppEvent> {

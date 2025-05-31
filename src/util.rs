@@ -41,6 +41,7 @@ pub struct Matcher<T: Display> {
     entry_size: usize,
     bounds: Rect,
 }
+
 impl<T: Display> Matcher<T> {
     pub fn new(items: impl IntoIterator<Item = T>, bounds: Rect) -> Self {
         let items = Vec::from_iter(items);
@@ -60,10 +61,7 @@ impl<T: Display> Matcher<T> {
     pub fn get(&self, n: usize) -> Option<MatcherPage<T>> {
         let page_cap = self.bounds.width as usize / self.entry_size * self.bounds.height as usize;
         if self.items.is_empty() {
-            return Some(MatcherPage {
-                items: &[],
-                entry_size: self.entry_size,
-            });
+            return Some(MatcherPage::default());
         }
         Some(MatcherPage {
             items: self.items.chunks(page_cap).nth(n)?,
@@ -76,6 +74,15 @@ impl<T: Display> Matcher<T> {
 pub struct MatcherPage<'a, T: Display> {
     items: &'a [T],
     entry_size: usize,
+}
+
+impl<'a, T: Display> Default for MatcherPage<'a, T> {
+    fn default() -> Self {
+        Self {
+            items: &[],
+            entry_size: 0,
+        }
+    }
 }
 
 impl<'a, T: Display> MatcherPage<'a, T> {
