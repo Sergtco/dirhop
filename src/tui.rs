@@ -4,12 +4,12 @@ use std::{
 };
 
 use crossterm::{
-    QueueableCommand, cursor, execute, queue,
+    cursor, execute, queue,
     style::{self, StyledContent, Stylize},
     terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::util::{MatcherPage, Rect};
+use crate::Rect;
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -32,59 +32,34 @@ impl Renderer {
         Ok(Self { buf, bounds })
     }
 
-    pub fn draw_list<'a, T, Style, D>(
-        &mut self,
-        input: &str,
-        header: impl Display,
-        page: MatcherPage<T>,
-        style: Style,
-    ) -> io::Result<()>
-    where
-        T: Display + Clone + 'a,
-        Style: Fn(&T) -> StyledContent<D>,
-        D: Display,
-    {
-        self.clear_rect(self.bounds)?;
-
-        queue!(self.buf, cursor::MoveTo(self.bounds.x, self.bounds.y),)?;
-
-        self.buf.queue(style::Print(format!("{}\r\n", header)))?;
-        self.buf.queue(style::Print("\r\n"))?;
-
-        for (ind, bind) in page.iter().enumerate() {
-            let row = ind % self.bounds.height as usize;
-            let col = ind / self.bounds.height as usize;
-            let (mut rest, mut typed) = (bind.1.as_str(), "");
-            if let Some(right) = rest.strip_prefix(input) {
-                rest = right;
-                typed = input;
-            }
-            queue!(
-                self.buf,
-                cursor::MoveTo(
-                    (self.bounds.x as usize + col * (page.item_size() + 3)) as u16,
-                    self.bounds.y + 2 + row as u16
-                ),
-                style::Print(format!("[{}{}]{}", typed.blue(), rest, style(bind.0))),
-            )?
-        }
-
-        self.buf.flush()?;
-        Ok(())
-    }
-
     pub fn restore(&mut self) -> io::Result<()> {
         self.clear_all()?;
         execute!(self.buf, LeaveAlternateScreen, cursor::Show)?;
         terminal::disable_raw_mode()
     }
 
-    fn clear_rect(&mut self, area: Rect) -> io::Result<()> {
-        let spaces = " ".repeat(area.width as usize);
-        for y in self.bounds.y..(self.bounds.y + self.bounds.height) {
+    pub fn draw<D>(&mut self, bounds: Rect, item: &D) -> io::Result<()>
+    where
+        D: Draw,
+    {
+        item.draw(bounds, &mut self.buf)
+    }
+
+    pub fn redraw<D>(&mut self, bounds: Rect, item: &D) -> io::Result<()>
+    where
+        D: Draw,
+    {
+        self.clear_rect(bounds)?;
+        self.draw(bounds, item)?;
+        self.buf.flush()
+    }
+
+    fn clear_rect(&mut self, bounds: Rect) -> io::Result<()> {
+        let spaces = " ".repeat(bounds.width as usize);
+        for y in bounds.y..(bounds.y + bounds.height) {
             queue!(
                 self.buf,
-                cursor::MoveTo(self.bounds.x, y),
+                cursor::MoveTo(bounds.x, y),
                 style::Print(spaces.clone()),
             )?;
         }
@@ -98,6 +73,53 @@ impl Renderer {
             self.buf,
             cursor::MoveTo(self.bounds.x, self.bounds.y),
             terminal::Clear(ClearType::FromCursorDown)
+        )?;
+
+        Ok(())
+    }
+}
+
+pub trait Draw {
+    fn draw<B>(&self, bounds: Rect, buf: &mut B) -> io::Result<()>
+    where
+        B: Write;
+}
+
+impl<T: Draw> Draw for &T {
+    fn draw<B>(&self, bounds: Rect, buf: &mut B) -> io::Result<()>
+    where
+        B: Write,
+    {
+        (*self).draw(bounds, buf)
+    }
+}
+
+pub type Style<T> = fn(&T) -> StyledContent<String>;
+
+#[derive(Debug)]
+pub struct Text {
+    text: String,
+    style: Style<String>,
+}
+
+impl<T: Display> From<T> for Text {
+    fn from(value: T) -> Self {
+        Text {
+            text: value.to_string(),
+            style: |s| s.clone().yellow(),
+        }
+    }
+}
+
+impl Draw for Text {
+    fn draw<B>(&self, bounds: Rect, buf: &mut B) -> io::Result<()>
+    where
+        B: Write,
+    {
+        queue!(
+            buf,
+            cursor::MoveTo(bounds.x, bounds.y),
+            style::Print((self.style)(&self.text))
         )?;
 
         Ok(())

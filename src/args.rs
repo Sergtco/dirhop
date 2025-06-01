@@ -5,7 +5,7 @@ type Result<T> = result::Result<T, Box<dyn Error>>;
 #[derive(Debug, Default)]
 pub struct Opts {
     pub program_name: String,
-    pub base_path: PathBuf,
+    pub path: PathBuf,
     pub show_hidden: bool,
 }
 
@@ -24,12 +24,12 @@ impl Opts {
                 someflag if someflag.starts_with("-") => {
                     return Err(format!("wrong flag: {someflag}").into());
                 }
-                rest => conf.base_path = PathBuf::try_from(&rest)?,
+                rest => conf.path = PathBuf::try_from(&rest)?,
             }
         }
 
-        if conf.base_path.to_string_lossy().len() == 0 {
-            conf.base_path = ".".into();
+        if conf.path.to_string_lossy().len() == 0 {
+            conf.path = ".".into();
         }
 
         Ok(conf)
