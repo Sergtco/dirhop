@@ -48,3 +48,10 @@ pub fn sort_entries(entries: &mut [PathBuf]) {
         }
     });
 }
+
+pub fn is_dotfile<P: AsRef<Path>>(entry: P) -> bool {
+    entry
+        .as_ref()
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with("."))
+}

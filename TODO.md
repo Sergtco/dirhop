@@ -1,2 +1,0 @@
-- [ ] Add support for big dirs (somehow).
-- [ ] Solve piping problem with crossterm.

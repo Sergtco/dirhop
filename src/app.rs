@@ -16,7 +16,7 @@ use crate::{
     args::Opts,
     matcher::Matcher,
     tui::{Renderer, Style, Text},
-    util::{DisplayablePathBuf, get_entries, sort_entries},
+    util::{DisplayablePathBuf, get_entries, is_dotfile, sort_entries},
 };
 
 pub struct App {
@@ -80,7 +80,12 @@ impl App {
 
         let mut entries = get_entries(&opts.path)?;
         sort_entries(&mut entries);
-        let matcher = Matcher::new(entries.into_iter().map(Into::into), layout["matcher"]);
+        let filtered = entries
+            .into_iter()
+            .filter(|entry| !is_dotfile(entry) || opts.show_hidden)
+            .map(Into::into);
+
+        let matcher = Matcher::new(filtered, layout["matcher"]);
         let renderer = Renderer::new_with_bounds(bounds)?;
         Ok(Self {
             renderer,
@@ -115,6 +120,7 @@ impl App {
                     InputEvent::Accept => return Ok(parent.to_string_lossy().to_string()),
                     InputEvent::ToggleHidden => {
                         self.opts.show_hidden = !self.opts.show_hidden;
+                        self.update_matcher(&parent)?;
                         continue 'outer;
                     }
                     InputEvent::Quit => {
@@ -179,8 +185,12 @@ impl App {
         let mut new_entries = get_entries(&path)?;
         sort_entries(&mut new_entries);
 
-        self.matcher
-            .update_entries(new_entries.into_iter().map(PathBuf::into));
+        let filtered = new_entries
+            .into_iter()
+            .filter(|entry| !is_dotfile(entry) || self.opts.show_hidden)
+            .map(PathBuf::into);
+
+        self.matcher.update_entries(filtered);
 
         Ok(())
     }
