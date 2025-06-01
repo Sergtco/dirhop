@@ -23,8 +23,7 @@ pub struct App {
     renderer: Renderer,
     matcher: Matcher<DisplayablePathBuf>,
     opts: Opts,
-    #[allow(unused)]
-    bounds: Rect,
+    layout: HashMap<String, Rect>,
 }
 
 #[derive(Debug)]
@@ -56,42 +55,43 @@ impl App {
                 height,
             }
         };
-        let mut entries = get_entries(&opts.path)?;
-        sort_entries(&mut entries);
-        let matcher = Matcher::new(entries.into_iter().map(Into::into), bounds);
-        let renderer = Renderer::new_with_bounds(bounds)?;
-        Ok(Self {
-            renderer,
-            matcher,
-            opts,
-            bounds,
-        })
-    }
-
-    pub fn run(&mut self) -> io::Result<String> {
-        let mut parent = fs::canonicalize(&self.opts.path).unwrap_or_default();
-        let layout: HashMap<&str, Rect> = [
+        let layout: HashMap<String, Rect> = [
+            ("renderer".into(), bounds),
             (
-                "text",
+                "text".into(),
                 Rect {
                     x: 0,
                     y: 0,
-                    width: self.bounds.width,
-                    height: 1,
+                    width: bounds.width,
+                    height: 2,
                 },
             ),
             (
-                "matcher",
+                "matcher".into(),
                 Rect {
                     x: 0,
-                    y: 1,
-                    width: self.bounds.width,
-                    height: self.bounds.height - 1,
+                    y: 2,
+                    width: bounds.width,
+                    height: bounds.height - 2,
                 },
             ),
         ]
         .into();
 
+        let mut entries = get_entries(&opts.path)?;
+        sort_entries(&mut entries);
+        let matcher = Matcher::new(entries.into_iter().map(Into::into), layout["matcher"]);
+        let renderer = Renderer::new_with_bounds(bounds)?;
+        Ok(Self {
+            renderer,
+            matcher,
+            opts,
+            layout,
+        })
+    }
+
+    pub fn run(&mut self) -> io::Result<String> {
+        let mut parent = fs::canonicalize(&self.opts.path).unwrap_or_default();
         let style: Style<DisplayablePathBuf> = |a| match a.get().is_dir() {
             true => a.to_string().blue().bold(),
             false => a.to_string().stylize(),
@@ -105,8 +105,8 @@ impl App {
             curr_page.set_style(style);
 
             self.renderer
-                .redraw(layout["text"], &Text::from(parent.display()))?;
-            self.renderer.redraw(layout["matcher"], &curr_page)?;
+                .redraw(self.layout["text"], &Text::from(parent.display()))?;
+            self.renderer.redraw(self.layout["matcher"], &curr_page)?;
 
             loop {
                 // Input events
@@ -164,12 +164,12 @@ impl App {
                         curr_page.set_style(style);
                         page_num = next_page_num;
 
-                        self.renderer.redraw(layout["matcher"], &curr_page)?;
+                        self.renderer.redraw(self.layout["matcher"], &curr_page)?;
                     }
                 }
 
                 if match_changed {
-                    self.renderer.redraw(layout["matcher"], &curr_page)?;
+                    self.renderer.redraw(self.layout["matcher"], &curr_page)?;
                 }
             }
         }

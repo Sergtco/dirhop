@@ -31,6 +31,7 @@ impl Opts {
         if conf.path.to_string_lossy().len() == 0 {
             conf.path = ".".into();
         }
+        conf.path = conf.path.canonicalize()?;
 
         Ok(conf)
     }
