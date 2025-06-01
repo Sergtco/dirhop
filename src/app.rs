@@ -78,12 +78,12 @@ impl App {
         ]
         .into();
 
-        let mut entries = get_entries(&opts.path)?;
-        sort_entries(&mut entries);
-        let filtered = entries
-            .into_iter()
+        let entries = get_entries(&opts.path)?;
+        let mut filtered = entries
             .filter(|entry| !is_dotfile(entry) || opts.show_hidden)
-            .map(Into::into);
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        sort_entries(&mut filtered);
 
         let matcher = Matcher::new(filtered, layout["matcher"]);
         let renderer = Renderer::new_with_bounds(bounds)?;
@@ -182,13 +182,13 @@ impl App {
     }
 
     fn update_matcher<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        let mut new_entries = get_entries(&path)?;
-        sort_entries(&mut new_entries);
-
-        let filtered = new_entries
+        let new_entries = get_entries(&path)?;
+        let mut filtered = new_entries
             .into_iter()
             .filter(|entry| !is_dotfile(entry) || self.opts.show_hidden)
-            .map(PathBuf::into);
+            .map(PathBuf::into)
+            .collect::<Vec<_>>();
+        sort_entries(&mut filtered);
 
         self.matcher.update_entries(filtered);
 

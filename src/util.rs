@@ -24,24 +24,28 @@ impl fmt::Display for DisplayablePathBuf {
     }
 }
 
-pub fn get_entries<P: AsRef<Path>>(dirname: P) -> io::Result<Vec<PathBuf>> {
-    let entries = fs::read_dir(dirname.as_ref())?
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .collect::<Vec<_>>();
+pub fn get_entries<P: AsRef<Path>>(dirname: P) -> io::Result<impl Iterator<Item = PathBuf>> {
+    let entries = fs::read_dir(&dirname)?.filter_map(|entry| entry.ok().map(|e| e.path()));
     Ok(entries)
 }
 
-pub fn sort_entries(entries: &mut [PathBuf]) {
+pub fn sort_entries(entries: &mut [DisplayablePathBuf]) {
     entries.sort_by(|a, b| {
         let order = a
+            .get()
             .to_string_lossy()
             .to_lowercase()
             .trim_start_matches(".")
-            .cmp(b.to_string_lossy().to_lowercase().trim_start_matches("."));
+            .cmp(
+                b.get()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .trim_start_matches("."),
+            );
 
-        if !(a.is_dir() ^ b.is_dir()) {
+        if !(a.get().is_dir() ^ b.get().is_dir()) {
             order
-        } else if a.is_dir() {
+        } else if a.get().is_dir() {
             Ordering::Less
         } else {
             Ordering::Greater
