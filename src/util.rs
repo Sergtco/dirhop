@@ -3,6 +3,8 @@ use std::{
     fmt, fs, io,
     path::{Path, PathBuf},
 };
+
+use rayon::slice::ParallelSliceMut;
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DisplayablePathBuf(PathBuf);
 
@@ -30,7 +32,7 @@ pub fn get_entries<P: AsRef<Path>>(dirname: P) -> io::Result<impl Iterator<Item 
 }
 
 pub fn sort_entries(entries: &mut [DisplayablePathBuf]) {
-    entries.sort_by(|a, b| {
+    entries.par_sort_by(|a, b| {
         let order = a
             .get()
             .to_string_lossy()
